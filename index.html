@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+</head>
+
+<body>
+    <button id="controls-toggle" onclick="toggleControls()">hide</button>
+    <div id="controls">
+        <h3>// controls</h3>
+
+        <div class="row">
+            <div class="label">FOG</div>
+            <button onclick="env.fog = 0">none</button>
+            <button onclick="env.fog = 0.3">light</button>
+            <button onclick="env.fog = 0.6">medium</button>
+            <button onclick="env.fog = 0.9">heavy</button>
+        </div>
+
+        <div class="row">
+            <div class="label">TIME</div>
+            <button onclick="env.time = 'dusk'">dusk</button>
+            <button onclick="env.time = 'night'">night</button>
+            <button onclick="env.time = 'late'">late</button>
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="label">BUILDINGS</div>
+            <button onclick="toggleAllWindows()">all on/off</button>
+            <button onclick="randomizeWindows()">randomize</button>
+            <button onclick="dimWindows()">dim all</button>
+        </div>
+
+        <div class="row">
+            <div class="label">STREETLAMPS</div>
+            <button onclick="toggleStreetlamps()">toggle</button>
+        </div>
+
+        <div class="row">
+            <div class="label">AVIATION LIGHTS</div>
+            <button onclick="env.aviationLights = !env.aviationLights">toggle</button>
+        </div>
+
+        <hr>
+
+    </div>
+
+    <script src="sketch.js"></script>
+</body>
+
+</html>
