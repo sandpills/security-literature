@@ -1,0 +1,20 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #050505;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+}
+
+/* 强制画布使用像素化渲染，防止浏览器强行平滑 */
+canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 50px rgba(20, 50, 20, 0.5);
+    border: 2px solid #111;
+}

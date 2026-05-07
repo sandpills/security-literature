@@ -4,6 +4,7 @@ body {
     color: #aaa;
     font-family: monospace;
     overflow: hidden;
+    user-select: none;
 }
 
 #controls {
@@ -64,21 +65,17 @@ body {
     margin-top: 8px;
 }
 
-#controls-toggle {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    background: rgba(20, 20, 20, 0.85);
-    color: #ccc;
-    border: 1px solid #555;
-    padding: 4px 10px;
-    cursor: pointer;
-    font-family: monospace;
-    font-size: 10px;
-    z-index: 11;
+#controls input[type="range"] {
+    width: 100%;
+    accent-color: #f0a040;
 }
 
-#controls-toggle:hover {
-    background: #2a2a2a;
-    border-color: #888;
+body.controls-page {
+    overflow: auto;
+}
+
+body.controls-page #controls {
+    position: static;
+    margin: 24px;
+    max-width: 360px;
 }

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet" href="styles.css">
+    <title>scene // controls</title>
+</head>
+
+<body class="controls-page">
+    <div id="controls">
+        <h3>// controls</h3>
+
+        <div class="row">
+            <div id="midi-status" class="label">connecting MIDI…</div>
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="label">FOG</div>
+            <input type="range" min="0" max="100" value="40" oninput="send('fog:set', this.value / 100)">
+        </div>
+
+        <div class="row">
+            <div class="label">TIME (dusk → night)</div>
+            <input type="range" min="0" max="100" value="100" oninput="send('time:set', this.value / 100)">
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="label">BUILDINGS</div>
+            <button onclick="send('windows:toggle')">all on/off</button>
+            <button onclick="send('windows:randomize')">randomize</button>
+            <button onclick="send('windows:flicker')">flicker on</button>
+        </div>
+
+        <div class="row">
+            <div class="label">WINDOW DIM</div>
+            <input type="range" min="0" max="100" value="0" oninput="send('windows:dim:set', this.value / 100)">
+        </div>
+
+        <div class="row">
+            <div class="label">STREETLAMPS</div>
+            <button onclick="send('streetlamps:toggle')">toggle all</button>
+            <button onclick="send('streetlamp:flicker2')">flicker #2</button>
+        </div>
+
+        <div class="row">
+            <div class="label">AVIATION LIGHTS</div>
+            <button onclick="send('aviation:toggle')">toggle</button>
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="label">GATE</div>
+            <button onclick="send('gate:toggle')">toggle arm</button>
+            <button onclick="send('text:toggle')">toggle text</button>
+        </div>
+
+        <hr>
+
+        <div class="key-hint">commands routed via MIDI / IAC</div>
+    </div>
+
+    <script src="controls.js"></script>
+</body>
+
+</html>

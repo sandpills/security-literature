@@ -1,15 +1,15 @@
 
 let env = {
     fog: 0.4,
-    time: 'night',
+    timeOfDay: 1.0,   // 0 = dusk, 1 = night
+    windowDim: 0,     // 0 = full brightness, 1 = fully dimmed
     aviationLights: true,
     paused: false,
     globalTime: 0,
-    showUI: true,
 };
 
 // shared y-coordinates (fractions of canvas height)
-const GROUND_Y = 0.85;          // where ridges close + mid-rises sit + ground gradient starts
+const GROUND_Y = 0.88;          // where ridges close + mid-rises sit + ground gradient starts
 const FG_GROUND_Y = 0.92;       // where row houses + streetlamps sit
 
 
@@ -132,6 +132,7 @@ class Building {
 
         // 窗户
         const o = this.windowOpts;
+        const dimMult = 1 - env.windowDim;
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
                 const wnd = this.windows[r][c];
@@ -141,10 +142,10 @@ class Building {
                     // always rendered as a stair — never falls back to residential look
                     const stripW = max(2, o.windowW * o.stairWidthRatio);
                     const stripX = rct.x + (o.windowW - stripW) / 2;
-                    const glow = 100 * wnd.brightness;
-                    drawingContext.shadowColor = `rgba(190, 210, 230, 0.4)`;
+                    const glow = 100 * wnd.brightness * dimMult;
+                    drawingContext.shadowColor = `rgba(190, 210, 230, ${0.4 * dimMult})`;
                     drawingContext.shadowBlur = 5;
-                    fill(glow, glow, glow, 10);
+                    fill(glow, glow, glow, 10 * dimMult);
                     rect(stripX, rct.y, stripW, rct.h);
                     drawingContext.shadowBlur = 0;
                 } else if (wnd.on) {
@@ -152,10 +153,15 @@ class Building {
                     if (wnd.flicker) {
                         alpha = 0.7 + 0.3 * sin(env.globalTime * 8 + r * 2 + c);
                     }
-                    const glow = 220 * wnd.brightness * alpha;
-                    drawingContext.shadowColor = `rgba(220, 170, 90, ${0.5 * alpha})`;
+                    const dim = env.windowDim;
+                    const baseGlow = 220 * wnd.brightness * alpha;
+                    const rr = lerp(baseGlow, 15, dim);
+                    const gg = lerp(baseGlow * 0.75, 15, dim);
+                    const bb = lerp(baseGlow * 0.4, 15, dim);
+                    const aa = lerp(200, 255, dim);
+                    drawingContext.shadowColor = `rgba(220, 170, 90, ${0.5 * alpha * (1 - dim)})`;
                     drawingContext.shadowBlur = 6;
-                    fill(glow, glow * 0.75, glow * 0.4, 200);
+                    fill(rr, gg, bb, aa);
                     rect(rct.x, rct.y, rct.w, rct.h);
                     drawingContext.shadowBlur = 0;
                 } else {
@@ -174,15 +180,22 @@ class Streetlamp {
         this.y = y;
         this.intensity = intensity;
         this.on = true;
+        this.flicker = false;
     }
 
     draw() {
         if (!this.on) return;
 
+        let flickerMult = 1;
+        if (this.flicker) {
+            const n = noise(env.globalTime * 14, this.x * 0.01);
+            flickerMult = n > 0.5 ? 1 : (n > 0.38 ? 0.4 : 0.05);
+        }
+
         drawingContext.save();
         for (let i = 4; i >= 1; i--) {
             const r = i * 35;
-            const alpha = (0.4 * this.intensity) / (i * 1.5);
+            const alpha = (0.4 * this.intensity * flickerMult) / (i * 1.5);
             const grad = drawingContext.createRadialGradient(
                 this.x, this.y, 0,
                 this.x, this.y, r
@@ -205,16 +218,19 @@ class Mountain {
     }
 
     getColor() {
-        const palettes = {
-            dusk: { far: [55, 42, 52], close: [20, 16, 26] },
-            night: { far: [22, 26, 38], close: [4, 6, 12] },
-            late: { far: [10, 12, 18], close: [1, 2, 4] },
-        };
-        const p = palettes[env.time] || palettes.night;
+        const dusk = { far: [55, 42, 52], close: [20, 16, 26] };
+        const night = { far: [22, 26, 38], close: [4, 6, 12] };
+        const t = env.timeOfDay;
+        const farR = lerp(dusk.far[0], night.far[0], t);
+        const farG = lerp(dusk.far[1], night.far[1], t);
+        const farB = lerp(dusk.far[2], night.far[2], t);
+        const clR = lerp(dusk.close[0], night.close[0], t);
+        const clG = lerp(dusk.close[1], night.close[1], t);
+        const clB = lerp(dusk.close[2], night.close[2], t);
         return color(
-            lerp(p.far[0], p.close[0], this.depth),
-            lerp(p.far[1], p.close[1], this.depth),
-            lerp(p.far[2], p.close[2], this.depth)
+            lerp(farR, clR, this.depth),
+            lerp(farG, clG, this.depth),
+            lerp(farB, clB, this.depth)
         );
     }
 
@@ -394,20 +410,37 @@ function randomizeWindows() {
     }
 }
 
-function dimWindows() {
+function toggleStreetlamps() {
+    for (let lamp of streetlamps) {
+        lamp.on = !lamp.on;
+    }
+}
+
+function flickerOnWindows() {
+    let flickering = 0, total = 0;
     for (let b of buildings) {
         for (let row of b.windows) {
             for (let w of row) {
-                if (w.on) w.brightness *= 0.7;
+                if (w.type === 'stair' || !w.on) continue;
+                total++;
+                if (w.flicker) flickering++;
+            }
+        }
+    }
+    const turnOn = total === 0 || flickering / total < 0.5;
+    for (let b of buildings) {
+        for (let row of b.windows) {
+            for (let w of row) {
+                if (w.type === 'stair' || !w.on) continue;
+                w.flicker = turnOn;
             }
         }
     }
 }
 
-function toggleStreetlamps() {
-    for (let lamp of streetlamps) {
-        lamp.on = !lamp.on;
-    }
+function flickerStreetlamp(index) {
+    const lamp = streetlamps[index];
+    if (lamp) lamp.flicker = !lamp.flicker;
 }
 
 // control
@@ -421,8 +454,74 @@ function mousePressed() {
 
 function keyPressed() {
     if (key === ' ') env.paused = !env.paused;
-    if (key === 'h' || key === 'H') toggleControls();
 }
+
+// ===== command bus =====
+// Single dispatch table used by both BroadcastChannel (controls page)
+// and WebMIDI (TouchDesigner via IAC Driver).
+const commands = {
+    'fog:set': (v) => env.fog = v,
+    'time:set': (v) => env.timeOfDay = v,
+    'windows:dim:set': (v) => env.windowDim = v,
+    'windows:toggle': () => toggleAllWindows(),
+    'windows:randomize': () => randomizeWindows(),
+    'windows:flicker': () => flickerOnWindows(),
+    'streetlamps:toggle': () => toggleStreetlamps(),
+    'streetlamp:flicker2': () => flickerStreetlamp(1),
+    'aviation:toggle': () => env.aviationLights = !env.aviationLights,
+};
+
+function applyCommand(cmd, value) {
+    const fn = commands[cmd];
+    if (fn) fn(value);
+    else console.warn('unknown command:', cmd);
+}
+
+// MIDI mapping — channel-agnostic, note-on triggers, CC for continuous.
+const MIDI_NOTE_MAP = {
+    67: 'windows:toggle',
+    68: 'windows:randomize',
+    70: 'streetlamps:toggle',
+    71: 'aviation:toggle',
+    72: 'windows:flicker',
+    73: 'streetlamp:flicker2',
+};
+const MIDI_CC_MAP = {
+    20: 'fog:set',         // 0..1
+    21: 'time:set',        // 0=dusk → 1=night
+    22: 'windows:dim:set', // 0=full bright → 1=dark
+};
+
+function setupMIDI() {
+    if (!navigator.requestMIDIAccess) {
+        console.warn('WebMIDI not available in this browser');
+        return;
+    }
+    navigator.requestMIDIAccess().then(midi => {
+        const wire = (input) => {
+            input.onmidimessage = handleMIDI;
+            console.log('MIDI input:', input.name);
+        };
+        for (const input of midi.inputs.values()) wire(input);
+        midi.onstatechange = (e) => {
+            if (e.port.type === 'input' && e.port.state === 'connected') wire(e.port);
+        };
+    }).catch(err => console.warn('MIDI access denied:', err));
+}
+
+function handleMIDI(msg) {
+    const [status, data1, data2] = msg.data;
+    const type = status & 0xF0;
+    if (type === 0x90 && data2 > 0) {
+        const cmd = MIDI_NOTE_MAP[data1];
+        if (cmd) applyCommand(cmd);
+    } else if (type === 0xB0) {
+        const cmd = MIDI_CC_MAP[data1];
+        if (cmd) applyCommand(cmd, data2 / 127);
+    }
+}
+
+setupMIDI();
 
 
 function draw() {
@@ -465,31 +564,10 @@ function draw() {
     drawFog();
 }
 
-function toggleControls() {
-    env.showUI = !env.showUI;
-    const panel = document.getElementById('controls');
-    const toggle = document.getElementById('controls-toggle');
-    if (panel) panel.style.display = env.showUI ? '' : 'none';
-    if (toggle) toggle.textContent = env.showUI ? 'hide' : 'show';
-}
-
 function drawSky() {
-    let topColor, bottomColor;
-
-    switch (env.time) {
-        case 'dusk':
-            topColor = color(20, 18, 35);
-            bottomColor = color(60, 35, 30);
-            break;
-        case 'night':
-            topColor = color(2, 3, 8);
-            bottomColor = color(8, 8, 14);
-            break;
-        case 'late':
-            topColor = color(0, 0, 3);
-            bottomColor = color(3, 3, 5);
-            break;
-    }
+    const dT = env.timeOfDay;
+    const topColor = lerpColor(color(20, 18, 35), color(2, 3, 8), dT);
+    const bottomColor = lerpColor(color(60, 35, 30), color(8, 8, 14), dT);
 
     for (let y = 0; y < height; y++) {
         const t = y / height;
@@ -501,22 +579,9 @@ function drawSky() {
 }
 
 function drawGround() {
-    // foreground ground / road, time-shifted
-    let topCol, botCol;
-    switch (env.time) {
-        case 'dusk':
-            topCol = color(18, 14, 22);
-            botCol = color(15, 11, 20);
-            break;
-        case 'night':
-            topCol = color(4, 5, 10);
-            botCol = color(10, 10, 14);
-            break;
-        case 'late':
-            topCol = color(1, 2, 4);
-            botCol = color(3, 3, 6);
-            break;
-    }
+    const dT = env.timeOfDay;
+    const topCol = lerpColor(color(18, 14, 22), color(4, 5, 10), dT);
+    const botCol = lerpColor(color(15, 11, 20), color(10, 10, 14), dT);
     const groundTop = height * GROUND_Y;
     for (let y = groundTop; y < height; y++) {
         const t = (y - groundTop) / (height - groundTop);

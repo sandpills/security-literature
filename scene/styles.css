@@ -1,0 +1,80 @@
+body {
+    margin: 0;
+    background: #000;
+    color: #aaa;
+    font-family: monospace;
+    overflow: hidden;
+}
+
+#controls {
+    position: fixed;
+    top: 40px;
+    left: 10px;
+    background: rgba(20, 20, 20, 0.85);
+    padding: 12px 16px;
+    border: 1px solid #333;
+    z-index: 10;
+    font-size: 11px;
+    line-height: 1.6;
+    max-width: 280px;
+}
+
+#controls h3 {
+    margin: 0 0 8px 0;
+    color: #f0a040;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+}
+
+#controls button {
+    background: #1a1a1a;
+    color: #ccc;
+    border: 1px solid #555;
+    padding: 4px 8px;
+    margin: 2px 2px 2px 0;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 10px;
+}
+
+#controls button:hover {
+    background: #2a2a2a;
+    border-color: #888;
+}
+
+#controls .row {
+    margin-bottom: 6px;
+}
+
+#controls .label {
+    color: #888;
+    font-size: 10px;
+    margin-bottom: 3px;
+}
+
+#controls hr {
+    border: none;
+    border-top: 1px solid #333;
+    margin: 10px 0;
+}
+
+.key-hint {
+    color: #666;
+    font-size: 10px;
+    margin-top: 8px;
+}
+
+#controls input[type="range"] {
+    width: 100%;
+    accent-color: #f0a040;
+}
+
+body.controls-page {
+    overflow: auto;
+}
+
+body.controls-page #controls {
+    position: static;
+    margin: 24px;
+    max-width: 360px;
+}
