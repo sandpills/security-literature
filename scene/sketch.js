@@ -592,15 +592,13 @@ function drawGround() {
 }
 
 function drawFog() {
-    if (env.fog <= 0) return;
-
-    const fogTop = height * 0.4;
+    const fogTop = height * (0.4 - env.fog * 0.3);
 
     drawingContext.save();
     const grad = drawingContext.createLinearGradient(0, fogTop, 0, height);
-    grad.addColorStop(0, `rgba(50, 50, 60, 0)`);
-    grad.addColorStop(0.6, `rgba(60, 60, 70, ${env.fog * 0.3})`);
-    grad.addColorStop(1, `rgba(70, 70, 80, ${env.fog * 0.6})`);
+    grad.addColorStop(0, `rgba(50, 50, 60, ${env.fog * 0.5})`);
+    grad.addColorStop(0.6, `rgba(60, 60, 70, ${0.3 + env.fog * 0.65})`);
+    grad.addColorStop(1, `rgba(70, 70, 80, ${0.6 + env.fog * 0.4})`);
     drawingContext.fillStyle = grad;
     drawingContext.fillRect(0, fogTop, width, height - fogTop);
     drawingContext.restore();

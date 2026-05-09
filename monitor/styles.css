@@ -17,4 +17,5 @@ canvas {
     image-rendering: crisp-edges;
     box-shadow: 0 0 50px rgba(20, 50, 20, 0.5);
     border: 2px solid #111;
+    border-radius: 8px;
 }
