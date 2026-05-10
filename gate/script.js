@@ -5,6 +5,7 @@ const STATE_DURATION = 15000; // 每阶段 15 秒
 let autoPlayText = false; // 默认关闭自动播放
 
 let timeOfDay = 1.0; // 0 = dusk, 1 = night — mirrors scene/sketch.js env.timeOfDay (CC 21)
+let fog = 0.4; // 0..1 — mirrors scene/sketch.js env.fog (CC 20)
 
 let time1964 = new Date("1964-08-12T00:00:00").getTime();
 
@@ -124,10 +125,9 @@ function draw() {
     noStroke();
     drawSky();
 
-    // 背景山脉、航空灯与底部雾气
+    // 背景山脉与航空灯
     for (let m of mountains) m.draw();
     drawAviationLights();
-    drawFog();
 
     // 前景门禁光晕与栅栏
     drawAtmosphere();
@@ -138,6 +138,9 @@ function draw() {
     drawGround();
     gateMachine.update(dt);
     gateMachine.draw();
+
+    // 雾气覆盖整个前景，与 scene 保持一致
+    drawFog();
 }
 
 // ==================
@@ -171,11 +174,13 @@ function drawAviationLights() {
 }
 
 function drawFog() {
-    let fogTop = height * 0.35;
+    const fogTop = height * (0.35 - fog * 0.25);
     drawingContext.save();
-    let grad = drawingContext.createLinearGradient(0, fogTop, 0, groundLevel);
-    grad.addColorStop(0, `rgba(30, 30, 35, 0)`);
-    grad.addColorStop(1, `rgba(40, 25, 30, 0.4)`);
+    const grad = drawingContext.createLinearGradient(0, fogTop, 0, groundLevel);
+    grad.addColorStop(0, `rgba(50, 50, 60, 0)`);
+    grad.addColorStop(0.35, `rgba(55, 55, 65, ${fog * 0.45})`);
+    grad.addColorStop(0.6, `rgba(60, 60, 70, ${0.3 + fog * 0.65})`);
+    grad.addColorStop(1, `rgba(70, 70, 80, ${0.6 + fog * 0.4})`);
     drawingContext.fillStyle = grad;
     drawingContext.fillRect(0, fogTop, width, groundLevel - fogTop);
     drawingContext.restore();
@@ -509,6 +514,7 @@ const MIDI_NOTE_MAP = {
     66: () => window.toggleTextState(),
 };
 const MIDI_CC_MAP = {
+    20: (v) => { fog = v; },       // 0..1 — mirrors scene/sketch.js
     21: (v) => { timeOfDay = v; }, // 0=dusk → 1=night
 };
 

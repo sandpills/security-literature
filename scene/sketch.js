@@ -596,7 +596,8 @@ function drawFog() {
 
     drawingContext.save();
     const grad = drawingContext.createLinearGradient(0, fogTop, 0, height);
-    grad.addColorStop(0, `rgba(50, 50, 60, ${env.fog * 0.5})`);
+    grad.addColorStop(0, `rgba(50, 50, 60, 0)`);
+    grad.addColorStop(0.35, `rgba(55, 55, 65, ${env.fog * 0.45})`);
     grad.addColorStop(0.6, `rgba(60, 60, 70, ${0.3 + env.fog * 0.65})`);
     grad.addColorStop(1, `rgba(70, 70, 80, ${0.6 + env.fog * 0.4})`);
     drawingContext.fillStyle = grad;
