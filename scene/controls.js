@@ -8,6 +8,11 @@ const MIDI_OUT_NOTE = {
     // gate sketch
     'gate:toggle': 65,
     'text:toggle': 66,
+    // monitor sketch
+    'monitor:trigger1': 74,
+    'monitor:trigger2': 75,
+    'monitor:trigger3': 76,
+    'monitor:trigger4': 77,
 };
 const MIDI_OUT_CC = {
     'fog:set': 20,

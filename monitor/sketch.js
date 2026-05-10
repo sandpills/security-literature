@@ -526,7 +526,7 @@ function drawOverlayUI(x, y, w, camId, camTitle, locationInfo) {
 // ==========================================
 function triggerAnomaly(camId) {
     manualTriggers[camId] = !manualTriggers[camId];
-    
+
     let btn = document.getElementById('btn' + camId);
     if (btn) {
         if (manualTriggers[camId]) {
@@ -540,3 +540,41 @@ function triggerAnomaly(camId) {
         }
     }
 }
+
+// ==================
+// MIDI (TouchDesigner via IAC Driver)
+// ==================
+const MIDI_NOTE_MAP = {
+    74: () => triggerAnomaly(1),
+    75: () => triggerAnomaly(2),
+    76: () => triggerAnomaly(3),
+    77: () => triggerAnomaly(4),
+};
+
+function setupMIDI() {
+    if (!navigator.requestMIDIAccess) {
+        console.warn('WebMIDI not available in this browser');
+        return;
+    }
+    navigator.requestMIDIAccess().then(midi => {
+        const wire = (input) => {
+            input.onmidimessage = handleMIDI;
+            console.log('MIDI input:', input.name);
+        };
+        for (const input of midi.inputs.values()) wire(input);
+        midi.onstatechange = (e) => {
+            if (e.port.type === 'input' && e.port.state === 'connected') wire(e.port);
+        };
+    }).catch(err => console.warn('MIDI access denied:', err));
+}
+
+function handleMIDI(msg) {
+    const [status, data1, data2] = msg.data;
+    const type = status & 0xF0;
+    if (type === 0x90 && data2 > 0) {
+        const fn = MIDI_NOTE_MAP[data1];
+        if (fn) fn();
+    }
+}
+
+setupMIDI();
