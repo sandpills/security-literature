@@ -1,97 +1,182 @@
 const CONFIG = {
-    baseWidth: 320,
-    baseHeight: 240,
-    scaleFactor: 3,
+    baseWidth: 320,        
+    baseHeight: 240,       
+    scaleFactor: 3,        
 
-    // 视觉滤镜
-    tintColor: [255, 255, 255],
-    textColor: [120, 255, 140],
-    noiseAlpha: 12,   // 全局雪花噪点透明度 (0-255)
-    scanlineAlpha: 150, // CRT 横向扫描线透明度 (0-255)
+    tintColor: [255, 255, 255], 
+    textColor: [120, 255, 140], 
+    noiseAlpha: 5,              
+    scanlineAlpha: 150,         
 
-    // 故障效果 (Glitch)
-    glitchProb: 0.04,   // 普通横向偏移的概率
-    glitchIntensity: 8, // 普通偏移的最大像素距
-    majorGlitchProb: 0.005,  // 严重信号撕裂的概率
-    majorGlitchIntensity: 40 // 严重撕裂的最大像素距
+    glitchProb: 0.04,        
+    glitchIntensity: 8,      
+    majorGlitchProb: 0.005,  
+    majorGlitchIntensity: 40 
 };
 
-// 全局变量
-let pg;       // 离屏绘图对象
-let noiseTex; // 预渲染的噪点纹理缓存 (提升性能)
+let pg;       
+let noiseTex; 
 let timeOffset = 0;
+
+let manualTriggers = { 1: false, 2: false, 3: false, 4: false };
+
+// 全局异常实体
+let shadowEntity = {
+    active: false,
+    state: 'TRANSIT', // ENTERING(进入), WANDERING(徘徊), LEAVING(离开), TRANSIT(转场)
+    camId: 1, 
+    x: 0, y: 0,       // 这里的 y 指的是黑影的脚底板接触地面的位置
+    targetX: 0, targetY: 0,
+    speed: 0.35,
+    transitTimer: 0,
+    wanderCount: 0
+};
 
 function setup() {
     createCanvas(CONFIG.baseWidth * CONFIG.scaleFactor, CONFIG.baseHeight * CONFIG.scaleFactor);
-    noSmooth();
+    noSmooth(); 
 
-    // 创建离屏低保真画布
     pg = createGraphics(CONFIG.baseWidth, CONFIG.baseHeight);
     pg.noSmooth();
     pg.pixelDensity(1);
 
-    // 预渲染全屏白噪点，提升运行帧率
     noiseTex = createGraphics(CONFIG.baseWidth, CONFIG.baseHeight);
     noiseTex.pixelDensity(1);
     noiseTex.loadPixels();
     for (let i = 0; i < noiseTex.pixels.length; i += 4) {
         let val = random(255);
         noiseTex.pixels[i] = val;
-        noiseTex.pixels[i + 1] = val;
-        noiseTex.pixels[i + 2] = val;
-        noiseTex.pixels[i + 3] = CONFIG.noiseAlpha;
+        noiseTex.pixels[i+1] = val;
+        noiseTex.pixels[i+2] = val;
+        noiseTex.pixels[i+3] = CONFIG.noiseAlpha; 
     }
     noiseTex.updatePixels();
+}
+
+// 获取各画面的可走动地面范围，防止飞到天上
+function getFloorY(camId, quadH) {
+    if (camId === 1) return { min: quadH * 0.65, max: quadH - 5 }; // 自行车棚
+    if (camId === 2) return { min: quadH * 0.55, max: quadH - 5 }; // 锅炉房
+    if (camId === 3) return { min: quadH * 0.60, max: quadH - 5 }; // 老寨
+    if (camId === 4) return { min: quadH * 0.85, max: quadH - 5 }; // 四层电梯门外
+    return { min: quadH * 0.5, max: quadH - 5 };
 }
 
 function draw() {
     background(0);
     timeOffset += 0.01;
-
-    // 清空离屏画布
     pg.background(10);
 
     let quadW = CONFIG.baseWidth / 2;
     let quadH = CONFIG.baseHeight / 2;
 
     // ==========================================
-    // 绘制四个监控画面 (局部位移，方便绘制)
+    // 更新全局实体 (黑影) 的寻路与状态机制
     // ==========================================
+    let isCam1Anomaly = manualTriggers[1] || noise(timeOffset * 0.2) > 0.88;
+    
+    if (isCam1Anomaly) {
+        if (!shadowEntity.active) {
+            shadowEntity.active = true;
+            shadowEntity.state = 'ENTERING';
+            shadowEntity.camId = 1;
+            let bounds = getFloorY(1, quadH);
+            shadowEntity.x = quadW + 20;  // 从右侧画面外走入
+            shadowEntity.y = random(bounds.min, bounds.max); // 限定在地面
+            shadowEntity.targetX = quadW * 0.8;
+            shadowEntity.targetY = random(bounds.min, bounds.max);
+        }
 
-    // CAM 01 - 5902楼走廊
-    pg.push();
-    pg.translate(0, 0);
-    drawCam1(quadW, quadH);
-    pg.pop();
+        if (shadowEntity.state === 'TRANSIT') {
+            shadowEntity.transitTimer--;
+            if (shadowEntity.transitTimer <= 0) {
+                // 转场结束，随机降临到一个新监控的边缘
+                shadowEntity.camId = floor(random(1, 5));
+                shadowEntity.state = 'ENTERING';
+                
+                let bounds = getFloorY(shadowEntity.camId, quadH);
+                let edge = floor(random(3)); // 0:左边, 1:右边, 2:底边 (只能从地上走进来)
+                
+                if (edge === 0) { shadowEntity.x = -20; shadowEntity.y = random(bounds.min, bounds.max); }
+                if (edge === 1) { shadowEntity.x = quadW + 20; shadowEntity.y = random(bounds.min, bounds.max); }
+                if (edge === 2) { shadowEntity.x = random(20, quadW - 20); shadowEntity.y = quadH + 20; }
+                
+                shadowEntity.targetX = random(20, quadW - 20);
+                shadowEntity.targetY = random(bounds.min, bounds.max);
+            }
+        } else {
+            let dx = shadowEntity.targetX - shadowEntity.x;
+            let dy = shadowEntity.targetY - shadowEntity.y;
+            let dist = sqrt(dx * dx + dy * dy);
+
+            if (dist < 5) {
+                let bounds = getFloorY(shadowEntity.camId, quadH);
+                if (shadowEntity.state === 'ENTERING') {
+                    shadowEntity.state = 'WANDERING';
+                    shadowEntity.wanderCount = floor(random(2, 6)); // 徘徊停留几次
+                    shadowEntity.targetX = random(20, quadW - 20);
+                    shadowEntity.targetY = random(bounds.min, bounds.max);
+                } else if (shadowEntity.state === 'WANDERING') {
+                    shadowEntity.wanderCount--;
+                    if (shadowEntity.wanderCount <= 0) {
+                        shadowEntity.state = 'LEAVING'; 
+                        let edge = floor(random(3)); // 往边缘走
+                        if (edge === 0) { shadowEntity.targetX = -30; shadowEntity.targetY = random(bounds.min, bounds.max); }
+                        if (edge === 1) { shadowEntity.targetX = quadW + 30; shadowEntity.targetY = random(bounds.min, bounds.max); }
+                        if (edge === 2) { shadowEntity.targetX = random(20, quadW - 20); shadowEntity.targetY = quadH + 30; }
+                    } else {
+                        shadowEntity.targetX = random(20, quadW - 20);
+                        shadowEntity.targetY = random(bounds.min, bounds.max);
+                    }
+                } else if (shadowEntity.state === 'LEAVING') {
+                    shadowEntity.state = 'TRANSIT';
+                    shadowEntity.transitTimer = floor(random(60, 150)); // 消失 1-2.5 秒钟后去别处
+                }
+            } else {
+                // 移动，轻微的横向摆动
+                shadowEntity.x += (dx / dist) * shadowEntity.speed + random(-0.2, 0.2);
+                shadowEntity.y += (dy / dist) * shadowEntity.speed;
+            }
+        }
+    } else {
+        shadowEntity.active = false;
+    }
+
+    // ==========================================
+    // 绘制四个监控画面
+    // ==========================================
+    
+    // CAM 01 - 自行车棚
+    pg.push(); pg.translate(0, 0); 
+    pg.drawingContext.save(); pg.drawingContext.beginPath(); pg.drawingContext.rect(0, 0, quadW, quadH); pg.drawingContext.clip();
+    drawCam1(quadW, quadH); 
+    pg.drawingContext.restore(); pg.pop();
 
     // CAM 02 - 废弃锅炉房
-    pg.push();
-    pg.translate(quadW, 0);
-    drawCam2(quadW, quadH);
-    pg.pop();
+    pg.push(); pg.translate(quadW, 0); 
+    pg.drawingContext.save(); pg.drawingContext.beginPath(); pg.drawingContext.rect(0, 0, quadW, quadH); pg.drawingContext.clip();
+    drawCam2(quadW, quadH); 
+    pg.drawingContext.restore(); pg.pop();
 
-    // CAM 03 - 9801楼四层 (不存在的楼层)
-    pg.push();
-    pg.translate(0, quadH);
-    drawCam3(quadW, quadH);
-    pg.pop();
+    // CAM 03 - 白崖溪老寨
+    pg.push(); pg.translate(0, quadH); 
+    pg.drawingContext.save(); pg.drawingContext.beginPath(); pg.drawingContext.rect(0, 0, quadW, quadH); pg.drawingContext.clip();
+    drawCam3(quadW, quadH); 
+    pg.drawingContext.restore(); pg.pop();
 
-    // CAM 04 - 白崖溪老寨
-    pg.push();
-    pg.translate(quadW, quadH);
-    drawCam4(quadW, quadH);
-    pg.pop();
+    // CAM 04 - 9801楼四层
+    pg.push(); pg.translate(quadW, quadH); 
+    pg.drawingContext.save(); pg.drawingContext.beginPath(); pg.drawingContext.rect(0, 0, quadW, quadH); pg.drawingContext.clip();
+    drawCam4(quadW, quadH); 
+    pg.drawingContext.restore(); pg.pop();
 
-    // 绘制十字分割线
     pg.stroke(200, 100);
     pg.strokeWeight(1);
     pg.line(quadW, 0, quadW, CONFIG.baseHeight);
     pg.line(0, quadH, CONFIG.baseWidth, quadH);
 
-    // 覆盖全局动态噪点 (通过随机偏移预渲染纹理实现动画)
     pg.image(noiseTex, random(-50, 0), random(-50, 0), CONFIG.baseWidth + 50, CONFIG.baseHeight + 50);
 
-    // 屏幕全局暗角 (在离屏画布上绘制，处于文字图层下方，避免重叠)
     pg.noFill();
     for (let i = 0; i < 15; i++) {
         pg.stroke(0, i * 12);
@@ -100,53 +185,31 @@ function draw() {
     }
 
     // ==========================================
-    // 统一绘制顶层 UI (避免被底层的暗角和画面元素遮挡)
+    // UI 信息
     // ==========================================
-    pg.push(); pg.translate(0, 0); drawOverlayUI(0, 0, quadW, 1, "CH-01", "[5902栋-内走廊]"); pg.pop();
-    pg.push(); pg.translate(quadW, 0); drawOverlayUI(0, 0, quadW, 2, "CH-02", "[二号锅炉房]"); pg.pop();
-    pg.push(); pg.translate(0, quadH); drawOverlayUI(0, 0, quadW, 3, "CH-03", "[9801栋-四层]"); pg.pop();
-    pg.push(); pg.translate(quadW, quadH); drawOverlayUI(0, 0, quadW, 4, "CH-04", "[白崖溪老寨]"); pg.pop();
+    pg.push(); pg.translate(0, 0); drawOverlayUI(0, 0, quadW, 1, "CAM 01", "[自行车棚]"); pg.pop();
+    pg.push(); pg.translate(quadW, 0); drawOverlayUI(0, 0, quadW, 2, "CAM 02", "[二号锅炉房]"); pg.pop();
+    pg.push(); pg.translate(0, quadH); drawOverlayUI(0, 0, quadW, 3, "CAM 03", "[白崖溪老寨]"); pg.pop();
+    pg.push(); pg.translate(quadW, quadH); drawOverlayUI(0, 0, quadW, 4, "CAM 04", "[9801栋-四层]"); pg.pop();
 
-    // ==========================================
-    // 后期处理：渲染到主画布 + 故障/扫描线
-    // ==========================================
-
-    // 应用夜视颜色滤镜
     tint(CONFIG.tintColor[0], CONFIG.tintColor[1], CONFIG.tintColor[2]);
 
-    // 切片渲染机制 (模拟信号撕裂 Glitch)
     let y = 0;
-    let sliceH = 2; // 每次切分 2 个低分辨率像素的高度
-
-    // 使用 Perlin Noise 控制故障爆发的随机时间间隔
-    let isGlitchBurst = noise(timeOffset * 1.5) > 0.72;
-
-    while (y < CONFIG.baseHeight) {
+    let sliceH = 2; 
+    let isGlitchBurst = noise(timeOffset * 1.5) > 0.72; 
+    
+    while(y < CONFIG.baseHeight) {
         let offsetX = 0;
-
-        // 只有在故障爆发期才执行画面撕裂，降低整体频率并增加随机感
         if (isGlitchBurst) {
-            if (random() < CONFIG.glitchProb) {
-                offsetX = random(-CONFIG.glitchIntensity, CONFIG.glitchIntensity);
-            }
-            if (random() < CONFIG.majorGlitchProb) {
-                offsetX = random(-CONFIG.majorGlitchIntensity, CONFIG.majorGlitchIntensity);
-            }
+            if (random() < CONFIG.glitchProb) offsetX = random(-CONFIG.glitchIntensity, CONFIG.glitchIntensity);
+            if (random() < CONFIG.majorGlitchProb) offsetX = random(-CONFIG.majorGlitchIntensity, CONFIG.majorGlitchIntensity);
         }
-
-        // 使用 image() 函数截取特定行并偏移绘制到主画布
-        // image(img, dx, dy, dW, dH, sx, sy, sW, sH)
-        image(
-            pg,
-            offsetX * CONFIG.scaleFactor, y * CONFIG.scaleFactor, CONFIG.baseWidth * CONFIG.scaleFactor, sliceH * CONFIG.scaleFactor,
-            0, y, CONFIG.baseWidth, sliceH
-        );
+        image(pg, offsetX * CONFIG.scaleFactor, y * CONFIG.scaleFactor, CONFIG.baseWidth * CONFIG.scaleFactor, sliceH * CONFIG.scaleFactor, 0, y, CONFIG.baseWidth, sliceH);
         y += sliceH;
     }
 
-    noTint(); // 移除滤镜，准备绘制 UI 层罩
+    noTint(); 
 
-    // 绘制 CRT 扫描线 (主画布分辨率)
     stroke(0, CONFIG.scanlineAlpha);
     strokeWeight(1.5);
     for (let i = 0; i < height; i += 3) {
@@ -154,265 +217,326 @@ function draw() {
     }
 }
 
-/** * CAM 01 - 真实走廊透视
+/**
+ * 局部实体渲染器 - 修改为锚定于“脚下坐标(x,y)”
  */
+function drawShadowEntityLocal(camId) {
+    if (shadowEntity.active && shadowEntity.camId === camId && shadowEntity.state !== 'TRANSIT') {
+        pg.push();
+        pg.noStroke();
+        
+        // 走动时的轻微上下颠簸
+        let bobY = sin(frameCount * 0.4) * 1.5; 
+        
+        pg.fill(5, 180);
+        pg.ellipse(shadowEntity.x, shadowEntity.y, 14, 4); // 绘制贴地阴影
+
+        pg.fill(2, 230);
+        // (x, y) 为脚底板，矩形向上绘制 (-30)
+        pg.rect(shadowEntity.x - 6, shadowEntity.y - 30 + bobY, 12, 30, 4); // 身体
+        pg.ellipse(shadowEntity.x, shadowEntity.y - 32 + bobY, 10, 10);     // 头部
+        pg.pop();
+    }
+}
+
+/** * CAM 01 - 自行车棚 */
 function drawCam1(w, h) {
     pg.noStroke();
-    pg.fill(22); // 稍微提亮基础背景
+    pg.fill(15);
     pg.rect(0, 0, w, h);
-    let vpX = w / 2;
-    let vpY = h / 2 - 10;
 
-    // 地板 (明显提亮，拉开与墙壁的对比)
-    pg.fill(50);
-    pg.noStroke();
-    pg.beginShape();
-    pg.vertex(0, h); pg.vertex(vpX - 15, vpY); pg.vertex(vpX + 15, vpY); pg.vertex(w, h);
-    pg.endShape(CLOSE);
-
-    // 墙壁上的门框 (模拟真实的公寓走廊)
-    pg.stroke(5); // 加深线条，增强立体感
+    pg.fill(25);
+    pg.quad(0, 0, w, 0, w, 30, 0, 45);
+    pg.stroke(50);
     pg.strokeWeight(1);
-    for (let i = 0; i < 3; i++) {
-        let xOff = map(i, 0, 2, 20, 70);
-        let yOff = map(i, 0, 2, 10, 50);
-        pg.fill(20);
-        // 左侧门
-        pg.quad(xOff, h - yOff, xOff, yOff + 10, xOff + 8, yOff + 15, xOff + 8, h - yOff - 5);
-        // 右侧门
-        pg.quad(w - xOff, h - yOff, w - xOff, yOff + 10, w - xOff - 8, yOff + 15, w - xOff - 8, h - yOff - 5);
-    }
-
-    // 走廊尽头昏暗的灯光 (强化高光)
+    pg.line(0, 45, w, 30);
     pg.noStroke();
-    if (noise(timeOffset * 3) > 0.3) {
-        pg.fill(255, 220); // 更刺眼的白光
-        pg.rect(vpX - 6, vpY - 20, 12, 3);
-        pg.fill(255, 60);  // 更亮的光晕
-        pg.ellipse(vpX, vpY - 18, 40, 20);
+
+    pg.fill(6);
+    pg.rect(w * 0.25, 36, 8, h);
+    pg.rect(w * 0.75, 32, 10, h); 
+
+    pg.fill(22);
+    pg.rect(0, h * 0.6, w, h * 0.4);
+
+    let lightFlicker = noise(timeOffset * 4) > 0.4 ? 255 : 100;
+    if (lightFlicker > 100) {
+        pg.fill(255, 15);  
+        pg.ellipse(w * 0.5, h * 0.75, 120, 30); 
     }
 
-    // 【怪异事件】极低概率出现走廊尽头的黑影
-    if (noise(timeOffset * 0.2) > 0.88) {
-        pg.fill(2); // 黑影更黑
-        pg.rect(vpX - 3, vpY - 5, 6, 18);
-        pg.ellipse(vpX, vpY - 7, 5, 5); // 头
+    let bikes = [
+        { x: w * 0.22, y: h * 0.68, s: 0.45, angle:  1.2, isFallen: false, col: 45 },
+        { x: w * 0.62, y: h * 0.63, s: 0.35, angle: -0.8, isFallen: false, col: 35 },
+        { x: w * 0.45, y: h * 0.75, s: 0.50, angle:  0.1, isFallen: false, col: 55 },
+        { x: w * 0.82, y: h * 0.78, s: 0.55, angle:  0.0, isFallen: true,  col: 40 }
+    ];
+
+    // 将自行车和黑影合并到一个渲染队列中
+    let renderList = bikes.map(b => ({ type: 'bike', obj: b, y: b.y }));
+    if (shadowEntity.active && shadowEntity.camId === 1 && shadowEntity.state !== 'TRANSIT') {
+        renderList.push({ type: 'shadow', y: shadowEntity.y });
     }
+    
+    // 按照真实世界物理坐标(脚部Y轴)严格排序，实现完美的前后交错遮挡！
+    renderList.sort((a, b) => a.y - b.y);
+
+    for (let i = 0; i < renderList.length; i++) {
+        let ro = renderList[i];
+        if (ro.type === 'shadow') {
+            drawShadowEntityLocal(1);
+        } else {
+            let b = ro.obj;
+            pg.push();
+            pg.translate(b.x, b.y);
+            pg.scale(b.s);
+            let strokeW = 1.2 / b.s;
+            pg.strokeWeight(strokeW); 
+            let cosA = Math.cos(b.angle);
+            let sinA = Math.sin(b.angle);
+            let wheelW, wheelH, frameY;
+            if (b.isFallen) {
+                wheelW = 24; wheelH = 8; frameY = 0.25; pg.rotate(0.15); cosA = 1; sinA = 0;
+            } else {
+                wheelW = max(22 * Math.abs(cosA), 4); wheelH = 24; frameY = 1.0;
+            }
+            let proj = (lx, ly) => { return { x: lx * cosA, y: ly * frameY + lx * sinA * 0.4 }; };
+            let pRAxle = proj(-20, 0);
+            let pFAxle = proj(20, 0);
+            let pBB    = proj(-4, 0);
+            let pSeat  = proj(-10, -18);
+            let pHeadB = proj(12, -18);
+            let pHeadT = proj(10, -25);
+
+            if (lightFlicker > 100) {
+                let distToLightX = Math.abs(b.x - w * 0.5);
+                let shadowAlpha = map(distToLightX, 30, 65, 180, 0, true);
+                if (b.isFallen) {
+                    pg.noStroke(); pg.fill(5, shadowAlpha); pg.ellipse(-10, wheelH / 2 + 2, 28, 12); 
+                } else {
+                    pg.stroke(5, shadowAlpha); pg.strokeWeight(8); pg.line(pRAxle.x, pRAxle.y + wheelH / 2, pFAxle.x, pFAxle.y + wheelH / 2);
+                    pg.noStroke(); pg.strokeWeight(strokeW);
+                }
+            }
+            pg.stroke(b.col); pg.noFill(); pg.ellipse(pRAxle.x, pRAxle.y, wheelW, wheelH); pg.ellipse(pFAxle.x, pFAxle.y, wheelW, wheelH);
+            pg.stroke(b.col + 20);
+            pg.line(pRAxle.x, pRAxle.y, pBB.x, pBB.y); pg.line(pBB.x, pBB.y, pSeat.x, pSeat.y); pg.line(pSeat.x, pSeat.y, pRAxle.x, pRAxle.y); 
+            pg.line(pBB.x, pBB.y, pHeadB.x, pHeadB.y); pg.line(pHeadB.x, pHeadB.y, pSeat.x, pSeat.y); 
+            pg.line(pFAxle.x, pFAxle.y, pHeadB.x, pHeadB.y); pg.line(pHeadB.x, pHeadB.y, pHeadT.x, pHeadT.y); 
+            pg.stroke(b.col + 30);
+            if (b.isFallen) {
+                pg.line(pHeadT.x, pHeadT.y, pHeadT.x + 8, pHeadT.y - 8); pg.line(pBB.x, pBB.y, pBB.x + 4, pBB.y - 6); 
+            } else {
+                let hbDx = 8 * sinA; let hbDy = 2 * cosA;
+                pg.line(pHeadT.x - hbDx, pHeadT.y - hbDy, pHeadT.x + hbDx, pHeadT.y + hbDy); 
+                pg.line(pSeat.x, pSeat.y, pSeat.x - 2 * cosA, pSeat.y - 4); pg.line(pSeat.x - 6 * cosA, pSeat.y - 4, pSeat.x + 4 * cosA, pSeat.y - 4 + 2 * sinA * 0.4); 
+            }
+            pg.pop();
+        }
+    }
+    
+    pg.noStroke(); pg.fill(lightFlicker, 220); pg.ellipse(w * 0.5, 36, 10, 4); 
 }
 
-/** * CAM 02 - 地下车库 / 设备房视角
- */
+/** * CAM 02 - 废弃锅炉房 */
 function drawCam2(w, h) {
-    pg.noStroke();
-    pg.fill(18); // 提亮环境底色
-    pg.rect(0, 0, w, h);
+    pg.noStroke(); pg.fill(18); pg.rect(0, 0, w, h); 
+    pg.fill(90, 120); pg.ellipse(w*0.7, h*0.4, 60, 30); 
+    
+    // 远处的管道
+    pg.fill(4); pg.rect(0, 10, w, 8); pg.rect(0, 25, w, 5);
+    
+    // 中景实体 (如果实体走到后面的话)
+    if (shadowEntity.active && shadowEntity.camId === 2 && shadowEntity.y < h * 0.8) drawShadowEntityLocal(2);
+    
+    // 前景遮挡柱子
+    pg.fill(5); pg.rect(w*0.15, 0, 30, h); 
+    pg.fill(8); pg.rect(w*0.65, h*0.2, 20, h); 
+    
+    // 前景实体 (如果实体走到柱子前面的话)
+    if (shadowEntity.active && shadowEntity.camId === 2 && shadowEntity.y >= h * 0.8) drawShadowEntityLocal(2);
 
-    // 远处的微弱灯光 (提亮)
-    pg.noStroke();
-    pg.fill(90, 120);
-    pg.ellipse(w * 0.7, h * 0.4, 60, 30);
+    let isAnomaly = noise(timeOffset * 0.15) > 0.85 || manualTriggers[2];
+    let bugCount = isAnomaly ? 200 : 15;
+    let speedMult = isAnomaly ? 0.6 : 0.2;
 
-    // 粗大的承重柱 (压暗，形成强对比)
-    pg.fill(5);
-    pg.rect(w * 0.15, 0, 30, h); // 前景柱子
-    pg.fill(8);
-    pg.rect(w * 0.65, h * 0.2, 20, h); // 中景柱子
-
-    // 顶部的管道
-    pg.fill(4);
-    pg.rect(0, 10, w, 8);
-    pg.rect(0, 25, w, 5);
-
-    // 空气中的灰尘飞舞 (更白、更清晰)
-    for (let i = 0; i < 15; i++) {
-        let dx = (noise(i, timeOffset * 0.2) * w * 1.5) % w;
-        let dy = (noise(i + 50, timeOffset * 0.2) * h * 1.5) % h;
-        pg.fill(255, 90);
+    for(let i=0; i<bugCount; i++) {
+        let dx = (noise(i, timeOffset * speedMult) * w * 1.5) % w; 
+        let dy = (noise(i+50, timeOffset * speedMult) * h * 1.5) % h;
+        pg.fill(255, isAnomaly ? 110 : 90); 
         pg.rect(dx, dy, 1, 1);
     }
-
-    // 【怪异事件】偶尔从柱子后探出的半个身子或黑影
-    let shadowActive = noise(timeOffset * 0.15) > 0.85;
-    if (shadowActive) {
-        pg.fill(0);
-        let peekX = w * 0.15 + 30 + noise(timeOffset) * 8; // 在柱子边缘蠕动
-        pg.ellipse(peekX, h * 0.6, 15, 25);
-    }
 }
 
-/** * CAM 03 - 9801楼四层 (电梯间视角)
- */
+/** * CAM 03 - 白崖溪老寨 */
 function drawCam3(w, h) {
     pg.noStroke();
-    pg.fill(25); // 提亮底色
+    pg.fill(15);
     pg.rect(0, 0, w, h);
-
-    // 【怪异事件】这层楼的信号偶尔会发生空间扭曲
-    let isGlitching = noise(timeOffset * 0.3) > 0.85;
-
-    if (isGlitching) {
-        pg.fill(random(10, 100)); // 故障闪烁时的亮度范围拉大
-        pg.rect(0, 0, w, h);
-        pg.fill(5);
-        // 错乱的透视几何
-        pg.quad(
-            w * 0.2 + random(-10, 10), h * 0.1,
-            w * 0.8 + random(-10, 10), h * 0.1 + random(-20, 20),
-            w * 0.9, h * 0.9,
-            w * 0.1, h * 0.9
-        );
-    } else {
-        // 大部分时间是正常的、死寂的电梯门 (提亮门面)
-        pg.fill(35);
-        pg.rect(w * 0.25, h * 0.15, w * 0.5, h * 0.85); // 电梯外框
-
-        // 电梯门中缝 (压暗)
-        pg.stroke(0);
-        pg.strokeWeight(1);
-        pg.line(w * 0.5, h * 0.15, w * 0.5, h);
-
-        // 楼层显示器
-        pg.fill(5);
-        pg.noStroke();
-        pg.rect(w * 0.42, h * 0.05, w * 0.16, 12);
-
-        // 散发着微弱红光的 "F4" (在黑白模式下显示为亮灰)
-        pg.fill(200, 150);
-        pg.rect(w * 0.45, h * 0.07, 4, 8);
-        pg.rect(w * 0.52, h * 0.07, 6, 8);
+    
+    let isAnomaly = random() < 0.0003 || manualTriggers[3];
+    
+    if (isAnomaly) {
+        if (random() > 0.3) {
+            pg.fill(random(18, 35)); 
+            pg.rect(0, 0, w, h);
+            drawShadowEntityLocal(3);
+            return; 
+        }
     }
-}
-
-/** * CAM 04 - 白崖溪老寨 (小区花园/人工湖夜景)
- */
-function drawCam4(w, h) {
-    pg.noStroke();
-    pg.fill(15); // 提亮夜空/远景
-    pg.rect(0, 0, w, h);
-
-    // 偶发的花屏信号丢失
-    if (random() < 0.005) {
-        pg.fill(255);
-        pg.rect(0, 0, w, h);
-        return;
-    }
-
-    // 远处的地平线与灌木丛轮廓 (压暗)
+    
+    let offX = w * 0.12;
     pg.noStroke();
     pg.fill(2);
     pg.beginShape();
     pg.vertex(0, h);
-    for (let x = 0; x <= w; x += 10) {
-        // 随风极其缓慢摆动的树丛
-        let y = h * 0.5 + noise(x * 0.05, timeOffset * 0.3) * 15;
+    for(let x=0; x<=w; x+=10) {
+        let y = h*0.5 + noise(x*0.05, timeOffset*0.3) * 15;
         pg.vertex(x, y);
     }
     pg.vertex(w, h);
     pg.endShape(CLOSE);
-
-    // 弯曲的小径 (提亮)
+    
     pg.fill(35);
     pg.beginShape();
-    pg.vertex(w * 0.3, h);
-    pg.vertex(w * 0.7, h);
-    pg.vertex(w * 0.55, h * 0.5);
-    pg.vertex(w * 0.45, h * 0.5);
+    pg.vertex(w*0.3 + offX, h); 
+    pg.vertex(w*0.7 + offX, h); 
+    pg.vertex(w*0.55 + offX, h*0.5); 
+    pg.vertex(w*0.45 + offX, h*0.5);
     pg.endShape(CLOSE);
-
-    // 远处的一盏路灯 (强化高光)
+    
     pg.fill(255, 40);
-    pg.ellipse(w * 0.25, h * 0.3, 50, 50); // 光晕
+    pg.ellipse(w*0.25 + offX, h*0.3, 50, 50);
     pg.fill(255, 150);
-    pg.ellipse(w * 0.25, h * 0.3, 8, 8);  // 灯泡
-
-    // 路灯杆
+    pg.ellipse(w*0.25 + offX, h*0.3, 8, 8);
     pg.stroke(2);
     pg.strokeWeight(2);
-    pg.line(w * 0.25, h * 0.3, w * 0.25, h * 0.6);
+    pg.line(w*0.25 + offX, h*0.3, w*0.25 + offX, h*0.6);
     pg.noStroke();
+
+    drawShadowEntityLocal(3);
 }
 
-/**
- * 绘制统一的 UI 层 (去除底色，避免文字与边框重叠)
- */
+/** * CAM 04 - 9801楼四层 */
+function drawCam4(w, h) {
+    pg.noStroke();
+    pg.fill(25);
+    pg.rect(0, 0, w, h);
+    
+    // 纯手动触发，移除原有的 cam4GlitchState 定时器逻辑
+    let isAnomaly = manualTriggers[4];
+
+    if (isAnomaly) {
+         pg.fill(random(5, 35));
+         pg.rect(0, 0, w, h);
+         
+         pg.push();
+         let driftX = random(-30, 30);
+         let driftY = random(-10, 10);
+         pg.translate(driftX, driftY);
+         
+         pg.fill(5);
+         let stretch = map(sin(frameCount * 0.5), -1, 1, 0.8, 1.5);
+         pg.quad(
+             w*0.2 + random(-15,15), h*0.25, 
+             w*0.8 + random(-15,15), h*0.25, 
+             w*0.9, h*0.95, 
+             w*0.1, h*0.95
+         );
+         
+         pg.stroke(0);
+         pg.strokeWeight(2);
+         let gapX = w * 0.5 + random(-10, 10);
+         pg.line(gapX, h*0.25, gapX, h);
+         
+         pg.stroke(100, 20);
+         pg.line(gapX + 5, h*0.25, gapX + 5, h);
+         pg.pop();
+    } else {
+        let doorTop = h * 0.35;
+        pg.fill(35);
+        pg.rect(w*0.3, doorTop, w*0.4, h - doorTop);
+        pg.stroke(0);
+        pg.strokeWeight(1);
+        pg.line(w*0.5, doorTop, w*0.5, h); 
+        let dispTop = h * 0.22;
+        pg.fill(5);
+        pg.noStroke();
+        pg.rect(w*0.42, dispTop, w*0.16, 12);
+        pg.fill(200, 150);
+        pg.rect(w*0.45, dispTop + 2, 4, 8); 
+        pg.rect(w*0.52, dispTop + 2, 6, 8);
+    }
+
+    drawShadowEntityLocal(4);
+}
+
 function drawOverlayUI(x, y, w, camId, camTitle, locationInfo) {
-    pg.fill(CONFIG.textColor[0], CONFIG.textColor[1], CONFIG.textColor[2]); // 应用绿色文字
+    pg.fill(CONFIG.textColor[0], CONFIG.textColor[1], CONFIG.textColor[2]);
     pg.noStroke();
     pg.textFont('monospace');
     pg.textSize(8);
-
-    // 定义两种边距：外侧躲避暗角的宽边距，和内侧贴合中线的窄边距
-    let outerPad = 18;
-    let innerPad = 4;
-
+    
+    let outerPad = 18; let innerPad = 4;
     let leftPadX, rightPadX, topPadY;
 
-    // 根据不同分屏的位置，动态分配边距
-    if (camId === 1) {
-        leftPadX = outerPad;  // CH-01: 贴左上外侧
-        rightPadX = innerPad; // 1961: 贴中线左侧
-        topPadY = outerPad;
-    } else if (camId === 2) {
-        leftPadX = innerPad;  // CH-02: 贴中线右侧
-        rightPadX = outerPad; // 1992: 贴右上外侧
-        topPadY = outerPad;
-    } else if (camId === 3) {
-        leftPadX = outerPad;  // CH-03: 贴左下外侧
-        rightPadX = innerPad; // 1999: 贴中线左侧
-        topPadY = innerPad;   // 整体上挪贴合水平中线下侧
-    } else if (camId === 4) {
-        leftPadX = innerPad;  // CH-04: 贴中线右侧
-        rightPadX = outerPad; // 2026: 贴右下外侧
-        topPadY = innerPad;   // 整体上挪贴合水平中线下侧
+    if (camId === 1) { 
+        leftPadX = outerPad; rightPadX = innerPad; topPadY = outerPad;
+    } else if (camId === 2) { 
+        leftPadX = innerPad; rightPadX = outerPad; topPadY = outerPad;
+    } else if (camId === 3) { 
+        leftPadX = outerPad; rightPadX = innerPad; topPadY = innerPad;   
+    } else if (camId === 4) { 
+        leftPadX = innerPad; rightPadX = outerPad; topPadY = innerPad;   
     }
 
     pg.textAlign(LEFT, TOP);
-
-    // 左上角信息
     pg.text(camTitle, x + leftPadX, y + topPadY);
     pg.text(locationInfo, x + leftPadX, y + topPadY + 11);
 
-    // 右上角跳动时间码
     pg.textAlign(RIGHT, TOP);
-
     let dateStr = "";
     let timeStr = "";
-    let blink = frameCount % 60 < 30 ? "REC" : "   ";
+    let blink = ""; 
 
     if (camId === 1) {
-        // CAM 01: 倒流的时间 (1961年)
         let s = 59 - (floor(frameCount / 60) % 60);
-        let ss = s < 10 ? '0' + s : s;
-        dateStr = "1961/11/01";
-        timeStr = `04:15:${ss}`;
+        dateStr = "1961/11/01"; timeStr = `04:15:${s < 10 ? '0' + s : s}`;
     } else if (camId === 2) {
-        // CAM 02: 锁死的时间与乱码 (1992年)
-        dateStr = "1992/08/██";
-        timeStr = "17:30:00";
-        if (random() < 0.05) blink = "REC"; // 偶尔卡顿闪烁
+        dateStr = "1992/08/██"; timeStr = "17:30:00";
     } else if (camId === 3) {
-        // CAM 03: 疯狂错乱的绝对错误时间 (1999年)
-        let d = floor(random(32, 99));
-        let h = floor(random(25, 99));
-        let m = floor(random(60, 99));
-        let s = floor(random(60, 99));
-        dateStr = `1999/12/${d}`;
-        timeStr = `${h}:${m}:${s}`;
-        blink = random() > 0.5 ? "REC" : "   "; // 疯狂闪烁
-    } else if (camId === 4) {
-        // CAM 04: 偶尔闪烁回建校前 (1957年闰二月)
-        if (random() < 0.05 || noise(timeOffset * 5) > 0.85) {
-            dateStr = "1957/02/29";
-            timeStr = "00:00:00";
-            blink = "REC"; // 撕裂时强制闪亮
+        if (noise(timeOffset * 0.3, 100) > 0.80 || manualTriggers[3]) {
+            dateStr = "1957/02/29"; timeStr = "00:00:00";
         } else {
             let s = floor(frameCount / 60) % 60;
-            let ss = s < 10 ? '0' + s : s;
-            dateStr = "2026/11/01";
-            timeStr = `04:15:${ss}`;
+            dateStr = "2026/11/01"; timeStr = `04:15:${s < 10 ? '0' + s : s}`;
         }
+    } else if (camId === 4) { 
+        dateStr = `1999/12/${floor(random(32, 99))}`;
+        timeStr = `${floor(random(25, 99))}:${floor(random(60, 99))}:${floor(random(60, 99))}`;
+        blink = random() > 0.5 ? "REC " : "    ";
     }
 
     pg.text(dateStr, x + w - rightPadX, y + topPadY);
-    pg.text(`${blink} ${timeStr}`, x + w - rightPadX, y + topPadY + 11);
+    pg.text(`${blink}${timeStr}`, x + w - rightPadX, y + topPadY + 11);
+}
+
+// ==========================================
+// 全局控制函数：开关切换逻辑
+// ==========================================
+function triggerAnomaly(camId) {
+    manualTriggers[camId] = !manualTriggers[camId];
+    
+    let btn = document.getElementById('btn' + camId);
+    if (btn) {
+        if (manualTriggers[camId]) {
+            btn.style.backgroundColor = '#78ff8c';
+            btn.style.color = '#050505';
+            btn.innerText = `[恢复: CAM 0${camId}]`;
+        } else {
+            btn.style.backgroundColor = '#050505';
+            btn.style.color = '#78ff8c';
+            btn.innerText = `[干预: CAM 0${camId}]`;
+        }
+    }
 }
