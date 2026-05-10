@@ -1,17 +1,25 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>monitors</title>
+    <title>监控系统</title>
+    <!-- 引入外部 CSS 文件 -->
+    <link rel="stylesheet" href="style.css">
     <!-- 引入 p5.js 核心库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
+
+    <!-- 交互控制面板 -->
+    <div class="control-panel">
+        <button id="btn1" onclick="triggerAnomaly(1)">[干预: CAM 01]</button>
+        <button id="btn2" onclick="triggerAnomaly(2)">[干预: CAM 02]</button>
+        <button id="btn3" onclick="triggerAnomaly(3)">[干预: CAM 03]</button>
+        <button id="btn4" onclick="triggerAnomaly(4)">[干预: CAM 04]</button>
+    </div>
+
+    <!-- 引入外部 JavaScript 文件（放在 body 底部确保 DOM 加载完毕） -->
     <script src="sketch.js"></script>
 </body>
-
 </html>
